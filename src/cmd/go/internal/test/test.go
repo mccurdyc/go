@@ -212,8 +212,6 @@ const testFlag2 = `
 	    Run enough iterations of each benchmark to take t, specified
 	    as a time.Duration (for example, -benchtime 1h30s).
 	    The default is 1 second (1s).
-	    The special syntax Nx means to run the benchmark N times
-	    (for example, -benchtime 100x).
 
 	-count n
 	    Run each test and benchmark n times (default 1).
@@ -531,6 +529,14 @@ var testVetFlags = []string{
 
 func runTest(cmd *base.Command, args []string) {
 	modload.LoadTests = true
+
+	pd, ok := os.LookupEnv("COVERPROFILE_OUT_PATH")
+	if !ok {
+		base.Fatalf("COVERPROFILE_OUT_PATH is required and not set")
+	}
+	cpFlag := fmt.Sprintf("-coverprofile=%s", pd)
+
+	args = append(args, cpFlag)
 
 	pkgArgs, testArgs = testFlags(args)
 
