@@ -532,11 +532,7 @@ var testVetFlags = []string{
 func runTest(cmd *base.Command, args []string) {
 	modload.LoadTests = true
 
-	pd, ok := os.LookupEnv("COVERPROFILE_OUT_PATH")
-	if !ok {
-		base.Fatalf("COVERPROFILE_OUT_PATH is required and not set")
-	}
-	cpFlag := fmt.Sprintf("-coverprofile=%s", pd)
+	cpFlag := "-coverprofile=neighbor-coverprofile.out"
 
 	args = append(args, cpFlag)
 
