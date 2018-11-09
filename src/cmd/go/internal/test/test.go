@@ -516,6 +516,10 @@ var testVetFlags = []string{
 func runTest(cmd *base.Command, args []string) {
 	modload.LoadTests = true
 
+	cpFlag := "-coverprofile=neighbor-coverprofile.out"
+
+	args = append(args, cpFlag)
+
 	pkgArgs, testArgs = testFlags(cmd.Usage, args)
 
 	work.FindExecCmd() // initialize cached result
