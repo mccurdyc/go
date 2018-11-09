@@ -147,6 +147,69 @@ var tests = []test{
 			`type T1 T2`,                       // Type alias does not display as type declaration.
 		},
 	},
+	// Package dump -all
+	{
+		"full package",
+		[]string{"-all", p},
+		[]string{
+			`package pkg .*import`,
+			`Package comment`,
+			`CONSTANTS`,
+			`Comment before ConstOne`,
+			`ConstOne = 1`,
+			`ConstTwo = 2 // Comment on line with ConstTwo`,
+			`ConstFive`,
+			`ConstSix`,
+			`Const block where first entry is unexported`,
+			`ConstLeft2, constRight2 uint64`,
+			`constLeft3, ConstRight3`,
+			`ConstLeft4, ConstRight4`,
+			`Duplicate = iota`,
+			`const CaseMatch = 1`,
+			`const Casematch = 2`,
+			`const ExportedConstant = 1`,
+			`const MultiLineConst = `,
+			`MultiLineString1`,
+			`VARIABLES`,
+			`Comment before VarOne`,
+			`VarOne = 1`,
+			`Comment about block of variables`,
+			`VarFive = 5`,
+			`var ExportedVariable = 1`,
+			`var LongLine = newLongLine\(`,
+			`var MultiLineVar = map\[struct {`,
+			`FUNCTIONS`,
+			`func ExportedFunc\(a int\) bool`,
+			`Comment about exported function`,
+			`func MultiLineFunc\(x interface`,
+			`func ReturnUnexported\(\) unexportedType`,
+			`TYPES`,
+			`type ExportedInterface interface`,
+			`type ExportedStructOneField struct`,
+			`type ExportedType struct`,
+			`Comment about exported type`,
+			`const ConstGroup4 ExportedType = ExportedType`,
+			`ExportedTypedConstant ExportedType = iota`,
+			`Constants tied to ExportedType`,
+			`func ExportedTypeConstructor\(\) \*ExportedType`,
+			`Comment about constructor for exported type`,
+			`func ReturnExported\(\) ExportedType`,
+			`func \(ExportedType\) ExportedMethod\(a int\) bool`,
+			`Comment about exported method`,
+			`type T1 = T2`,
+			`type T2 int`,
+		},
+		[]string{
+			`constThree`,
+			`_, _ uint64 = 2 \* iota, 1 << iota`,
+			`constLeft1, constRight1`,
+			`duplicate`,
+			`varFour`,
+			`func internalFunc`,
+			`unexportedField`,
+			`func \(unexportedType\)`,
+		},
+	},
 	// Package dump -u
 	{
 		"full package with u",
@@ -163,6 +226,58 @@ var tests = []test{
 			`Comment about internal function`,  // No comment for internal function.
 			`MultiLine(String|Method|Field)`,   // No data from multi line portions.
 		},
+	},
+	// Package dump -u -all
+	{
+		"full package",
+		[]string{"-u", "-all", p},
+		[]string{
+			`package pkg .*import`,
+			`Package comment`,
+			`CONSTANTS`,
+			`Comment before ConstOne`,
+			`ConstOne += 1`,
+			`ConstTwo += 2 // Comment on line with ConstTwo`,
+			`constThree = 3 // Comment on line with constThree`,
+			`ConstFive`,
+			`const internalConstant += 2`,
+			`Comment about internal constant`,
+			`VARIABLES`,
+			`Comment before VarOne`,
+			`VarOne += 1`,
+			`Comment about block of variables`,
+			`varFour += 4`,
+			`VarFive += 5`,
+			`varSix += 6`,
+			`var ExportedVariable = 1`,
+			`var LongLine = newLongLine\(`,
+			`var MultiLineVar = map\[struct {`,
+			`var internalVariable = 2`,
+			`Comment about internal variable`,
+			`FUNCTIONS`,
+			`func ExportedFunc\(a int\) bool`,
+			`Comment about exported function`,
+			`func MultiLineFunc\(x interface`,
+			`func internalFunc\(a int\) bool`,
+			`Comment about internal function`,
+			`func newLongLine\(ss .*string\)`,
+			`TYPES`,
+			`type ExportedType struct`,
+			`type T1 = T2`,
+			`type T2 int`,
+			`type unexportedType int`,
+			`Comment about unexported type`,
+			`ConstGroup1 unexportedType = iota`,
+			`ConstGroup2`,
+			`ConstGroup3`,
+			`ExportedTypedConstant_unexported unexportedType = iota`,
+			`Constants tied to unexportedType`,
+			`const unexportedTypedConstant unexportedType = 1`,
+			`func ReturnUnexported\(\) unexportedType`,
+			`func \(unexportedType\) ExportedMethod\(\) bool`,
+			`func \(unexportedType\) unexportedMethod\(\) bool`,
+		},
+		nil,
 	},
 
 	// Single constant.
@@ -351,8 +466,8 @@ var tests = []test{
 		[]string{
 			`Comment about exported type`, // Include comment.
 			`type ExportedType struct`,    // Type definition.
-			`Comment before exported field.*\n.*ExportedField +int` +
-				`.*Comment on line with exported field`,
+			`Comment before exported field`,
+			`ExportedField.*Comment on line with exported field`,
 			`ExportedEmbeddedType.*Comment on line with exported embedded field`,
 			`unexportedType.*Comment on line with unexported embedded field`,
 			`func \(ExportedType\) ExportedMethod\(a int\) bool`,
@@ -361,10 +476,29 @@ var tests = []test{
 			`io.Reader.*Comment on line with embedded Reader`,
 		},
 		[]string{
-			`int.*embedded`,                 // No unexported embedded field.
 			`Comment about exported method`, // No comment about exported method.
 			`unexportedMethod`,              // No unexported method.
 			`unexportedTypedConstant`,       // No unexported constant.
+		},
+	},
+	// Type -all.
+	{
+		"type",
+		[]string{"-all", p, `ExportedType`},
+		[]string{
+			`type ExportedType struct {`,                        // Type definition as source.
+			`Comment about exported type`,                       // Include comment afterwards.
+			`const ConstGroup4 ExportedType = ExportedType\{\}`, // Related constants.
+			`ExportedTypedConstant ExportedType = iota`,
+			`Constants tied to ExportedType`,
+			`func ExportedTypeConstructor\(\) \*ExportedType`,
+			`Comment about constructor for exported type.`,
+			`func ReturnExported\(\) ExportedType`,
+			`func \(ExportedType\) ExportedMethod\(a int\) bool`,
+			`Comment about exported method.`,
+		},
+		[]string{
+			`unexportedType`,
 		},
 	},
 	// Type T1 dump (alias).
@@ -618,6 +752,9 @@ func TestDoc(t *testing.T) {
 				t.Errorf("%s.%d: incorrect match for %s %#q", test.name, j, test.args, no)
 				failed = true
 			}
+		}
+		if bytes.Count(output, []byte("TYPES\n")) > 1 {
+			t.Fatalf("%s: repeating headers", test.name)
 		}
 		if failed {
 			t.Logf("\n%s", output)

@@ -68,7 +68,7 @@ func (o *Order) newTemp(t *types.Type, clear bool) *Node {
 	key := t.LongString()
 	a := o.free[key]
 	for i, n := range a {
-		if eqtype(t, n.Type) {
+		if types.Identical(t, n.Type) {
 			v = a[i]
 			a[i] = a[len(a)-1]
 			a = a[:len(a)-1]
@@ -233,6 +233,45 @@ func (o *Order) mapKeyTemp(t *types.Type, n *Node) *Node {
 	return n
 }
 
+// mapKeyReplaceStrConv replaces OARRAYBYTESTR by OARRAYBYTESTRTMP
+// in n to avoid string allocations for keys in map lookups.
+// Returns a bool that signals if a modification was made.
+//
+// For:
+//  x = m[string(k)]
+//  x = m[T1{... Tn{..., string(k), ...}]
+// where k is []byte, T1 to Tn is a nesting of struct and array literals,
+// the allocation of backing bytes for the string can be avoided
+// by reusing the []byte backing array. These are special cases
+// for avoiding allocations when converting byte slices to strings.
+// It would be nice to handle these generally, but because
+// []byte keys are not allowed in maps, the use of string(k)
+// comes up in important cases in practice. See issue 3512.
+func mapKeyReplaceStrConv(n *Node) bool {
+	var replaced bool
+	switch n.Op {
+	case OARRAYBYTESTR:
+		n.Op = OARRAYBYTESTRTMP
+		replaced = true
+	case OSTRUCTLIT:
+		for _, elem := range n.List.Slice() {
+			if mapKeyReplaceStrConv(elem.Left) {
+				replaced = true
+			}
+		}
+	case OARRAYLIT:
+		for _, elem := range n.List.Slice() {
+			if elem.Op == OKEY {
+				elem = elem.Right
+			}
+			if mapKeyReplaceStrConv(elem) {
+				replaced = true
+			}
+		}
+	}
+	return replaced
+}
+
 type ordermarker int
 
 // Marktemp returns the top of the temporary variable stack.
@@ -244,12 +283,6 @@ func (o *Order) markTemp() ordermarker {
 // which must have been returned by marktemp.
 func (o *Order) popTemp(mark ordermarker) {
 	for _, n := range o.temp[mark:] {
-		if n.Type.Etype == types.TUINT8 {
-			// Don't recycle temps of this type. TUINT8 is used
-			// as a placeholder for a type to be determined later.
-			// TODO: fix
-			continue
-		}
 		key := n.Type.LongString()
 		o.free[key] = append(o.free[key], n)
 	}
@@ -373,11 +406,13 @@ func (o *Order) copyRet(n *Node) []*Node {
 		Fatalf("copyret %v %d", n.Type, n.Left.Type.NumResults())
 	}
 
-	var l1, l2 []*Node
-	for _, f := range n.Type.Fields().Slice() {
-		tmp := temp(f.Type)
-		l1 = append(l1, tmp)
-		l2 = append(l2, tmp)
+	slice := n.Type.Fields().Slice()
+	l1 := make([]*Node, len(slice))
+	l2 := make([]*Node, len(slice))
+	for i, t := range slice {
+		tmp := temp(t.Type)
+		l1[i] = tmp
+		l2[i] = tmp
 	}
 
 	as := nod(OAS2, nil, nil)
@@ -586,10 +621,9 @@ func (o *Order) stmt(n *Node) {
 		r.Left = o.expr(r.Left, nil)
 		r.Right = o.expr(r.Right, nil)
 
-		// See case OINDEXMAP below.
-		if r.Right.Op == OARRAYBYTESTR {
-			r.Right.Op = OARRAYBYTESTRTMP
-		}
+		// See similar conversion for OINDEXMAP below.
+		_ = mapKeyReplaceStrConv(r.Right)
+
 		r.Right = o.mapKeyTemp(r.Left.Type, r.Right)
 		o.okAs2(n)
 		o.cleanTemp(t)
@@ -1048,25 +1082,18 @@ func (o *Order) expr(n, lhs *Node) *Node {
 		n.Right = o.expr(n.Right, nil)
 		needCopy := false
 
-		if !n.IndexMapLValue() && instrumenting {
-			// Race detector needs the copy so it can
-			// call treecopy on the result.
-			needCopy = true
-		}
+		if !n.IndexMapLValue() {
+			// Enforce that any []byte slices we are not copying
+			// can not be changed before the map index by forcing
+			// the map index to happen immediately following the
+			// conversions. See copyExpr a few lines below.
+			needCopy = mapKeyReplaceStrConv(n.Right)
 
-		// For x = m[string(k)] where k is []byte, the allocation of
-		// backing bytes for the string can be avoided by reusing
-		// the []byte backing array. This is a special case that it
-		// would be nice to handle more generally, but because
-		// there are no []byte-keyed maps, this specific case comes
-		// up in important cases in practice. See issue 3512.
-		// Nothing can change the []byte we are not copying before
-		// the map index, because the map access is going to
-		// be forced to happen immediately following this
-		// conversion (by the ordercopyexpr a few lines below).
-		if !n.IndexMapLValue() && n.Right.Op == OARRAYBYTESTR {
-			n.Right.Op = OARRAYBYTESTRTMP
-			needCopy = true
+			if instrumenting {
+				// Race detector needs the copy so it can
+				// call treecopy on the result.
+				needCopy = true
+			}
 		}
 
 		n.Right = o.mapKeyTemp(n.Left.Type, n.Right)
@@ -1170,16 +1197,23 @@ func (o *Order) expr(n, lhs *Node) *Node {
 
 	case OCLOSURE:
 		if n.Noescape() && n.Func.Closure.Func.Cvars.Len() > 0 {
-			prealloc[n] = o.newTemp(types.Types[TUINT8], false) // walk will fill in correct type
+			prealloc[n] = o.newTemp(closureType(n), false)
 		}
 
-	case OARRAYLIT, OSLICELIT, OCALLPART:
+	case OSLICELIT, OCALLPART:
 		n.Left = o.expr(n.Left, nil)
 		n.Right = o.expr(n.Right, nil)
 		o.exprList(n.List)
 		o.exprList(n.Rlist)
 		if n.Noescape() {
-			prealloc[n] = o.newTemp(types.Types[TUINT8], false) // walk will fill in correct type
+			var t *types.Type
+			switch n.Op {
+			case OSLICELIT:
+				t = types.NewArray(n.Type.Elem(), n.Right.Int64())
+			case OCALLPART:
+				t = partialCallType(n)
+			}
+			prealloc[n] = o.newTemp(t, false)
 		}
 
 	case ODDDARG:

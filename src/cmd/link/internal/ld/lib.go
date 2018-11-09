@@ -39,6 +39,7 @@ import (
 	"cmd/link/internal/loadelf"
 	"cmd/link/internal/loadmacho"
 	"cmd/link/internal/loadpe"
+	"cmd/link/internal/loadxcoff"
 	"cmd/link/internal/objfile"
 	"cmd/link/internal/sym"
 	"crypto/sha1"
@@ -855,6 +856,13 @@ func loadobjfile(ctxt *Link, lib *sym.Library) {
 			continue
 		}
 
+		// Skip other special (non-object-file) sections that
+		// build tools may have added. Such sections must have
+		// short names so that the suffix is not truncated.
+		if len(arhdr.name) < 16 && !strings.HasSuffix(arhdr.name, ".o") {
+			continue
+		}
+
 		pname := fmt.Sprintf("%s(%s)", lib.File, arhdr.name)
 		l = atolwhex(arhdr.size)
 		ldobj(ctxt, f, lib, l, pname, lib.File)
@@ -1337,9 +1345,24 @@ func (ctxt *Link) hostlink() {
 		ctxt.Logf("\n")
 	}
 
-	if out, err := exec.Command(argv[0], argv[1:]...).CombinedOutput(); err != nil {
+	out, err := exec.Command(argv[0], argv[1:]...).CombinedOutput()
+	if err != nil {
 		Exitf("running %s failed: %v\n%s", argv[0], err, out)
-	} else if len(out) > 0 {
+	}
+
+	// Filter out useless linker warnings caused by bugs outside Go.
+	// See also cmd/go/internal/work/exec.go's gccld method.
+	var save [][]byte
+	for _, line := range bytes.SplitAfter(out, []byte("\n")) {
+		// golang.org/issue/26073 - Apple Xcode bug
+		if bytes.Contains(line, []byte("ld: warning: text-based stub file")) {
+			continue
+		}
+		save = append(save, line)
+	}
+	out = bytes.Join(save, nil)
+
+	if len(out) > 0 {
 		// always print external output even if the command is successful, so that we don't
 		// swallow linker warnings (see https://golang.org/issue/17935).
 		ctxt.Logf("%s", out)
@@ -1515,6 +1538,18 @@ func ldobj(ctxt *Link, f *bio.Reader, lib *sym.Library, length int64, pn string,
 			ctxt.Textp = append(ctxt.Textp, textp...)
 		}
 		return ldhostobj(ldpe, ctxt.HeadType, f, pkg, length, pn, file)
+	}
+
+	if c1 == 0x01 && (c2 == 0xD7 || c2 == 0xF7) {
+		ldxcoff := func(ctxt *Link, f *bio.Reader, pkg string, length int64, pn string) {
+			textp, err := loadxcoff.Load(ctxt.Arch, ctxt.Syms, f, pkg, length, pn)
+			if err != nil {
+				Errorf(nil, "%v", err)
+				return
+			}
+			ctxt.Textp = append(ctxt.Textp, textp...)
+		}
+		return ldhostobj(ldxcoff, ctxt.HeadType, f, pkg, length, pn, file)
 	}
 
 	/* check the header */
@@ -2243,7 +2278,7 @@ func Entryvalue(ctxt *Link) int64 {
 	if s.Type == 0 {
 		return *FlagTextAddr
 	}
-	if s.Type != sym.STEXT {
+	if ctxt.HeadType != objabi.Haix && s.Type != sym.STEXT {
 		Errorf(s, "entry not text")
 	}
 	return s.Value

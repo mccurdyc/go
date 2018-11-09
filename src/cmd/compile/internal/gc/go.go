@@ -92,7 +92,6 @@ var pragcgobuf [][]string
 
 var outfile string
 var linkobj string
-var dolinkobj bool
 
 // nerrors is the number of compiler errors reported
 // since the last call to saveerrors.
@@ -105,8 +104,6 @@ var nsavederrors int
 var nsyntaxerrors int
 
 var decldepth int32
-
-var safemode bool
 
 var nolocalimports bool
 
@@ -150,7 +147,6 @@ var asmhdr string
 var simtype [NTYPE]types.EType
 
 var (
-	isforw    [NTYPE]bool
 	isInt     [NTYPE]bool
 	isFloat   [NTYPE]bool
 	isComplex [NTYPE]bool
@@ -210,8 +206,6 @@ var compiling_runtime bool
 
 // Compiling the standard library
 var compiling_std bool
-
-var compiling_wrappers bool
 
 var use_writebarrier bool
 

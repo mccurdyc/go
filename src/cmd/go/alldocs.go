@@ -342,6 +342,8 @@
 // 	cd go/src/encoding/json; go doc decode
 //
 // Flags:
+// 	-all
+// 		Show all the documentation for the package.
 // 	-c
 // 		Respect case when matching symbols.
 // 	-cmd
@@ -1602,17 +1604,20 @@
 // verb followed by arguments. For example:
 //
 // 	module my/thing
+// 	go 1.12
 // 	require other/thing v1.0.2
-// 	require new/thing v2.3.4
+// 	require new/thing/v2 v2.3.4
 // 	exclude old/thing v1.2.3
 // 	replace bad/thing v1.4.5 => good/thing v1.4.5
 //
-// The verbs are module, to define the module path; require, to require
-// a particular module at a given version or later; exclude, to exclude
-// a particular module version from use; and replace, to replace a module
-// version with a different module version. Exclude and replace apply only
-// in the main module's go.mod and are ignored in dependencies.
-// See https://research.swtch.com/vgo-mvs for details.
+// The verbs are
+// 	module, to define the module path;
+// 	go, to set the expected language version;
+// 	require, to require a particular module at a given version or later;
+// 	exclude, to exclude a particular module version from use; and
+// 	replace, to replace a module version with a different module version.
+// Exclude and replace apply only in the main module's go.mod and are ignored
+// in dependencies.  See https://research.swtch.com/vgo-mvs for details.
 //
 // The leading verb can be factored out of adjacent lines to create a block,
 // like in Go imports:
@@ -2497,7 +2502,7 @@
 // In general, adding a new dependency may require upgrading
 // existing dependencies to keep a working build, and 'go get' does
 // this automatically. Similarly, downgrading one dependency may
-// require downgrading other dependenceis, and 'go get' does
+// require downgrading other dependencies, and 'go get' does
 // this automatically as well.
 //
 // The -m flag instructs get to stop here, after resolving, upgrading,

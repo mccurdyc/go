@@ -64,6 +64,9 @@ Flags:
 		instead of $GOROOT/pkg/$GOOS_$GOARCH.
 	-l
 		Disable inlining.
+	-lang version
+		Set language version to compile, as in -lang=go1.12.
+		Default is current version.
 	-largemodel
 		Generate code that assumes a large memory model.
 	-linkobj file
@@ -92,8 +95,6 @@ Flags:
 		Compile with race detector enabled.
 	-trimpath prefix
 		Remove prefix from recorded source file paths.
-	-u
-		Disallow importing packages not marked as safe; implies -nolocalimports.
 
 There are also a number of debugging flags; run the command with no arguments
 for a usage message.

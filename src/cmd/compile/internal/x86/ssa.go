@@ -198,24 +198,31 @@ func ssaGenValue(s *gc.SSAGenState, v *ssa.Value) {
 		if v.Op == ssa.Op386DIVL || v.Op == ssa.Op386DIVW ||
 			v.Op == ssa.Op386MODL || v.Op == ssa.Op386MODW {
 
-			var c *obj.Prog
+			if ssa.NeedsFixUp(v) {
+				var c *obj.Prog
+				switch v.Op {
+				case ssa.Op386DIVL, ssa.Op386MODL:
+					c = s.Prog(x86.ACMPL)
+					j = s.Prog(x86.AJEQ)
+
+				case ssa.Op386DIVW, ssa.Op386MODW:
+					c = s.Prog(x86.ACMPW)
+					j = s.Prog(x86.AJEQ)
+				}
+				c.From.Type = obj.TYPE_REG
+				c.From.Reg = x
+				c.To.Type = obj.TYPE_CONST
+				c.To.Offset = -1
+
+				j.To.Type = obj.TYPE_BRANCH
+			}
+			// sign extend the dividend
 			switch v.Op {
 			case ssa.Op386DIVL, ssa.Op386MODL:
-				c = s.Prog(x86.ACMPL)
-				j = s.Prog(x86.AJEQ)
-				s.Prog(x86.ACDQ) //TODO: fix
-
+				s.Prog(x86.ACDQ)
 			case ssa.Op386DIVW, ssa.Op386MODW:
-				c = s.Prog(x86.ACMPW)
-				j = s.Prog(x86.AJEQ)
 				s.Prog(x86.ACWD)
 			}
-			c.From.Type = obj.TYPE_REG
-			c.From.Reg = x
-			c.To.Type = obj.TYPE_CONST
-			c.To.Offset = -1
-
-			j.To.Type = obj.TYPE_BRANCH
 		}
 
 		// for unsigned ints, we sign extend by setting DX = 0
@@ -277,6 +284,13 @@ func ssaGenValue(s *gc.SSAGenState, v *ssa.Value) {
 			m.To.Type = obj.TYPE_REG
 			m.To.Reg = x86.REG_DX
 		}
+
+	case ssa.Op386MULLU:
+		// Arg[0] is already in AX as it's the only register we allow
+		// results lo in AX
+		p := s.Prog(v.Op.Asm())
+		p.From.Type = obj.TYPE_REG
+		p.From.Reg = v.Args[1].Reg()
 
 	case ssa.Op386MULLQU:
 		// AX * args[1], high 32 bits in DX (result[0]), low 32 bits in AX (result[1]).
@@ -770,7 +784,8 @@ func ssaGenValue(s *gc.SSAGenState, v *ssa.Value) {
 		ssa.Op386SETGF, ssa.Op386SETGEF,
 		ssa.Op386SETB, ssa.Op386SETBE,
 		ssa.Op386SETORD, ssa.Op386SETNAN,
-		ssa.Op386SETA, ssa.Op386SETAE:
+		ssa.Op386SETA, ssa.Op386SETAE,
+		ssa.Op386SETO:
 		p := s.Prog(v.Op.Asm())
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = v.Reg()
@@ -842,6 +857,8 @@ var blockJump = [...]struct {
 	ssa.Block386GE:  {x86.AJGE, x86.AJLT},
 	ssa.Block386LE:  {x86.AJLE, x86.AJGT},
 	ssa.Block386GT:  {x86.AJGT, x86.AJLE},
+	ssa.Block386OS:  {x86.AJOS, x86.AJOC},
+	ssa.Block386OC:  {x86.AJOC, x86.AJOS},
 	ssa.Block386ULT: {x86.AJCS, x86.AJCC},
 	ssa.Block386UGE: {x86.AJCC, x86.AJCS},
 	ssa.Block386UGT: {x86.AJHI, x86.AJLS},
@@ -903,6 +920,7 @@ func ssaGenBlock(s *gc.SSAGenState, b, next *ssa.Block) {
 	case ssa.Block386EQ, ssa.Block386NE,
 		ssa.Block386LT, ssa.Block386GE,
 		ssa.Block386LE, ssa.Block386GT,
+		ssa.Block386OS, ssa.Block386OC,
 		ssa.Block386ULT, ssa.Block386UGT,
 		ssa.Block386ULE, ssa.Block386UGE:
 		jmp := blockJump[b.Kind]
